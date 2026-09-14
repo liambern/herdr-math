@@ -7,6 +7,8 @@ description: Use when writing or explaining mathematical equations in a Herdr te
 
 When answering a mathematical question in Herdr, write display equations using the LaTeX convention below. The user does not need to explicitly ask for rendered math. Avoid substituting Unicode or plain-text approximations for display equations unless the user requests that format.
 
+If another instruction prevents LaTeX output, explain the conflict rather than silently substituting Unicode: the renderer needs actual LaTeX source. A skill cannot override higher-priority instructions.
+
 Prefer standalone LaTeX environments, outside Markdown code fences. They survive harnesses such as Antigravity that already turn dollar-delimited math into Unicode text. Put the boundaries on separate lines:
 
 ```text

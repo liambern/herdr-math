@@ -50,6 +50,10 @@ The renderer also recognizes `align`, `gather`, and `multline` environments, wit
 - Equations use a dark background and light text. The screenshot shows the matching Catppuccin-style colors.
 - The worker caches its PNG and refreshes the placement every 200 ms while visible. MathJax runs only for uncached formulas. Brief raw-text transitions can occur during output and scrolling.
 
+## If equations still appear as plain text
+
+The writing skill must be installed for the agent you are using. Try asking it to use `herdr-math` for one equation. If it still emits Unicode, check for an older instruction or saved preference forbidding LaTeX. Update that preference to allow LaTeX display environments in Herdr; installing a renderer cannot override agent instructions. Existing conversations may need the corrected preference stated explicitly.
+
 ## Development and verification
 
 From the repository root:
