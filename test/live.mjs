@@ -45,7 +45,7 @@ const geometry = await request(path, 'pane.graphics.info', { pane_id: pane });
 const result = await request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 });
 writeFileSync('artifacts/live-snapshot.json', JSON.stringify({ geometry, read: result.read }, null, 2));
 const frame = renderFrame(result.read.text, geometry.cell_width_px, geometry.cell_height_px);
-writeFileSync('artifacts/equation-layer.png', frame.png);
+writeFileSync('artifacts/equation-layer.rgba', frame.pixels);
 writeFileSync('artifacts/placements.json', JSON.stringify(frame.placements, null, 2));
 writeFileSync('artifacts/live-ready', 'ready');
 let command = '';

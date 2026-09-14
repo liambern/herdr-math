@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { request } from '../src/herdr.mjs';
+import { request, subscribe, openGraphicsStream } from '../src/herdr.mjs';
 
 test('an interrupted Herdr connection rejects instead of hanging', async () => {
   const directory = await mkdtemp(`${tmpdir()}/herdr-math-rpc-`);
@@ -12,6 +12,8 @@ test('an interrupted Herdr connection rejects instead of hanging', async () => {
   await new Promise(resolve => server.listen(path, resolve));
   try {
     await assert.rejects(request(path, 'ping', {}), /closed the connection/);
+    await assert.rejects(subscribe(path, [{ type: 'pane.focused' }], () => {}), /closed the connection/);
+    await assert.rejects(openGraphicsStream(path, 'pane'), /closed the connection/);
   } finally {
     await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true });

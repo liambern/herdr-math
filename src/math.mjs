@@ -103,6 +103,6 @@ export function renderFrame(text, cellWidth, cellHeight) {
     placements.push(block);
   }
   const source = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" color="#cdd6f4">${shapes.join('')}</svg>`;
-  const png = new Resvg(source, { font: { loadSystemFonts: /<text[\s>]/.test(source) } }).render().asPng();
-  return { png, width, height, cols, rows, placements };
+  const rendered = new Resvg(source, { font: { loadSystemFonts: /<text[\s>]/.test(source) } }).render();
+  return { pixels: rendered.pixels, width, height, cols, rows, placements };
 }

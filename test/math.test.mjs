@@ -43,7 +43,8 @@ test('renders a fraction at real cell scale and preserves invalid or cramped sou
   const frame = renderFrame(equation, 10, 22);
   assert.equal(frame.placements.length, 1);
   assert.equal(frame.height, 66);
-  assert.equal(frame.png.subarray(1, 4).toString(), 'PNG');
+  assert.equal(frame.pixels.length, frame.width * frame.height * 4);
+  assert(frame.pixels.some(byte => byte !== 0));
   assert.equal(renderFrame('$$\n\\notacommand{x}\n$$', 10, 22).placements.length, 0);
   assert.equal(renderFrame('$$\\frac{a}{b}$$', 10, 22).placements.length, 0);
   renderFrame('$$\n\\def\\privateMacro{z}\\privateMacro\n$$', 10, 22);

@@ -1,8 +1,7 @@
 import net from 'node:net';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { setTimeout as delay } from 'node:timers/promises';
-import { request, sendFrame } from './herdr.mjs';
+import { request, subscribe, openGraphicsStream } from './herdr.mjs';
 
 const path = process.env.HERDR_SOCKET_PATH;
 if (!path) throw new Error('Run the Herdr Math action inside Herdr.');
@@ -27,71 +26,118 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
   const stop = () => { stopped = true; };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
-  let pane;
-  const clear = async () => {
-    if (pane) await request(path, 'pane.graphics.clear', { pane_id: pane, layer_id: 'herdr-math' })
-      .catch(error => { if (!['not_found', 'pane_not_found'].includes(error.code)) throw error; });
-  };
+  let focused;
+  let generation = 0;
+  let revision = 0;
+  let activeStream;
+  let subscription;
+  let failure;
+  const tasks = new Set();
+  const frames = new Map();
   try {
     const { renderFrame } = await import('./math.mjs');
-    let previous;
-    let frame;
-    const frames = new Map();
-    let nextPresentation = 0;
-    while (!stopped) {
+    async function renderPane(pane, mine) {
+      let stream;
+      let previous;
+      let scrollEvents;
+      let scrollRevision = 0;
+      let lastFrame;
+      let anchor;
       try {
-        const [{ plugins }, current] = await Promise.all([
-          request(path, 'plugin.list', { plugin_id: 'herdr-math' }),
-          request(path, 'pane.current', {}),
-        ]);
-        if (!plugins.some(plugin => plugin.enabled)) break;
-        const focused = current.pane?.pane_id;
-        if (focused !== pane) {
-          await clear();
-          pane = focused;
-          previous = undefined;
-          frame = undefined;
-        }
-        if (pane) {
-          const [geometry, result, layout] = await Promise.all([
-            request(path, 'pane.graphics.info', { pane_id: pane }),
-            request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 }),
-            request(path, 'pane.layout', { pane_id: pane }),
-          ]);
-          if (geometry.pane_visible && geometry.cell_width_px && geometry.cell_height_px) {
-            const text = result.read.text;
-            const signature = JSON.stringify([text, geometry.cell_width_px, geometry.cell_height_px, layout.layout]);
-            const changed = signature !== previous;
-            if (changed) {
-              frame = frames.get(signature);
-              if (!frame) {
-                frame = renderFrame(text, geometry.cell_width_px, geometry.cell_height_px);
-                frames.set(signature, frame);
-                if (frames.size > 8) frames.delete(frames.keys().next().value);
-              }
-              const latest = await request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 });
-              if (latest.read.text === text && !stopped) {
+        const scrollOpening = subscribe(path, [{ type: 'pane.scroll_changed', pane_id: pane }], event => {
+          const scroll = event.data.scroll;
+          scrollRevision++;
+          if (stream && lastFrame && anchor !== undefined && generation === mine && !stopped) {
+            stream.send(lastFrame, scroll.offset_from_bottom - scroll.max_offset_from_bottom - anchor)
+              .catch(error => { if (generation === mine && !stopped) { failure = error; stop(); } });
+          }
+        });
+        while (!stopped && generation === mine) {
+          try {
+            const readingRevision = revision;
+            const readingScroll = scrollRevision;
+            const results = await Promise.allSettled([
+              request(path, 'pane.graphics.info', { pane_id: pane }),
+              request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 }),
+              stream || openGraphicsStream(path, pane),
+              request(path, 'pane.get', { pane_id: pane }),
+              scrollEvents || scrollOpening,
+            ]);
+            if (results[2].status === 'fulfilled') stream = results[2].value;
+            if (results[4].status === 'fulfilled') scrollEvents = results[4].value;
+            if (stopped || generation !== mine) break;
+            if (readingScroll !== scrollRevision) continue;
+            const error = results.find(result => result.status === 'rejected');
+            if (error) throw error.reason;
+            activeStream = stream;
+            const [geometry, result, , info] = results.map(result => result.value);
+            if (geometry.pane_visible && geometry.cell_width_px && geometry.cell_height_px) {
+              const text = result.read.text;
+              const key = JSON.stringify([text, geometry.cell_width_px, geometry.cell_height_px]);
+              const signature = JSON.stringify([key, readingRevision, readingScroll]);
+              if (signature !== previous) {
+                let frame = frames.get(key);
+                if (!frame) {
+                  frame = renderFrame(text, geometry.cell_width_px, geometry.cell_height_px);
+                  frames.set(key, frame);
+                  if (frames.size > 8) frames.delete(frames.keys().next().value);
+                }
+                lastFrame = frame;
+                anchor = info.pane.scroll.offset_from_bottom - info.pane.scroll.max_offset_from_bottom;
+                await stream.send(frame, 0);
+                await new Promise(resolve => setTimeout(resolve, 20));
+                if (!stopped && generation === mine && readingScroll === scrollRevision) await stream.send(frame, 0);
                 previous = signature;
-              } else frame = undefined;
-            }
-            // Re-present cached pixels: terminal redraws can erase a placement
-            // without changing the visible text or geometry.
-            if (frame && !stopped && (changed || Date.now() >= nextPresentation)) {
-              await sendFrame(path, pane, frame);
-              // A fresh placement needs a prompt second presentation after the redraw.
-              nextPresentation = Date.now() + (changed ? 50 : 200);
-            }
-          } else previous = undefined;
+              }
+            } else previous = undefined;
+          } catch (error) {
+            if (!['not_found', 'pane_not_found', 'cell_size_unavailable', 'feature_disabled'].includes(error.code)) throw error;
+            stream?.close();
+            stream = undefined;
+            previous = undefined;
+          }
+          await new Promise(resolve => setTimeout(resolve, 20));
         }
-      } catch (error) {
-        if (!['not_found', 'pane_not_found', 'cell_size_unavailable', 'feature_disabled'].includes(error.code)) throw error;
-        previous = undefined;
-        frame = undefined;
+      } finally {
+        scrollEvents?.destroy();
+        stream?.close();
       }
-      await delay(50);
     }
+    function focus(pane) {
+      if (pane === focused) return;
+      focused = pane;
+      const mine = ++generation;
+      activeStream?.close();
+      activeStream = undefined;
+      if (!pane) return;
+      const task = renderPane(pane, mine).catch(error => {
+        if (generation !== mine || stopped) return;
+        failure = error;
+        stopped = true;
+      }).finally(() => tasks.delete(task));
+      tasks.add(task);
+    }
+    subscription = await subscribe(path, [{ type: 'pane.focused' }, { type: 'layout.updated' }], event => {
+      if (event.event === 'pane_focused') focus(event.data.pane_id);
+      else revision++;
+    });
+    subscription.on('close', stop);
+    const current = await request(path, 'pane.current', {}).catch(error => {
+      if (!['not_found', 'pane_not_found'].includes(error.code)) throw error;
+      return {};
+    });
+    if (!focused) focus(current.pane?.pane_id);
+    while (!stopped) {
+      const { plugins } = await request(path, 'plugin.list', { plugin_id: 'herdr-math' });
+      if (!plugins.some(plugin => plugin.enabled)) break;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (failure) throw failure;
   } finally {
+    stopped = true;
+    subscription?.destroy();
+    activeStream?.close();
+    await Promise.all(tasks);
     control.close();
-    await clear().catch(() => {}); // Pane/server may already have exited.
   }
 }
