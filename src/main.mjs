@@ -27,6 +27,7 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
   let focused;
+  let focusRevision = 0;
   let generation = 0;
   let revision = 0;
   let activeStream;
@@ -118,18 +119,25 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
       tasks.add(task);
     }
     subscription = await subscribe(path, [{ type: 'pane.focused' }, { type: 'layout.updated' }], event => {
-      if (event.event === 'pane_focused') focus(event.data.pane_id);
+      if (event.event === 'pane_focused') {
+        focusRevision++;
+        focus(event.data.pane_id);
+      }
       else revision++;
     });
     subscription.on('close', stop);
-    const current = await request(path, 'pane.current', {}).catch(error => {
-      if (!['not_found', 'pane_not_found'].includes(error.code)) throw error;
-      return {};
-    });
-    if (!focused) focus(current.pane?.pane_id);
     while (!stopped) {
       const { plugins } = await request(path, 'plugin.list', { plugin_id: 'herdr-math' });
       if (!plugins.some(plugin => plugin.enabled)) break;
+      // Herdr shell navigation can change the current pane without a focus event.
+      // Reconcile here as well as following events, including startup with no pane.
+      const readingFocus = focusRevision;
+      const current = await request(path, 'pane.current', {}).catch(error => {
+        if (!['not_found', 'pane_not_found'].includes(error.code)) throw error;
+        return {};
+      });
+      // An event received during the request is newer than this snapshot.
+      if (!stopped && readingFocus === focusRevision) focus(current.pane?.pane_id);
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     if (failure) throw failure;
