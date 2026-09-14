@@ -21,7 +21,8 @@ test('renderer follows focus, clears the old pane, and survives a closed pane', 
         socket.end(JSON.stringify({ id, error: { code: 'not_found', message: 'Pane closed' } }) + '\n');
         return;
       }
-      const result = method === 'pane.current' ? { pane: { pane_id: focused } }
+      const result = method === 'plugin.list' ? { plugins: [{ enabled: true }] }
+        : method === 'pane.current' ? { pane: { pane_id: focused } }
         : method === 'pane.graphics.info' ? { pane_visible: true, cell_width_px: 9, cell_height_px: 20 }
         : method === 'pane.read' ? { read: { text: '\n$$\nx^2\n$$\n' } }
         : {};

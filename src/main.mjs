@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { request, sendFrame } from './herdr.mjs';
-import { renderFrame } from './math.mjs';
 
 const path = process.env.HERDR_SOCKET_PATH;
 if (!path) throw new Error('Run the Herdr Math action inside Herdr.');
@@ -12,28 +11,35 @@ const controlPath = `${tmpdir()}/herdr-math-${key}.sock`;
 
 const running = await new Promise((resolve, reject) => {
   const socket = net.createConnection(controlPath);
-  socket.on('connect', () => { socket.end('stop'); resolve(true); });
+  socket.on('connect', () => { socket.end(); resolve(true); });
   socket.on('error', error => error.code === 'ENOENT' ? resolve(false) : reject(error));
 });
-if (!running) {
+if (!running && process.env.HERDR_PLUGIN_EVENT) {
+  await request(path, 'plugin.action.invoke', { action_id: 'herdr-math.start' });
+} else if (!running) {
   let stopped = false;
-  const control = net.createServer(socket => {
-    socket.once('data', () => { stopped = true; socket.end(); });
+  const control = net.createServer(socket => socket.end());
+  const acquired = await new Promise((resolve, reject) => {
+    control.once('error', error => error.code === 'EADDRINUSE' ? resolve(false) : reject(error));
+    control.listen(controlPath, () => resolve(true));
   });
-  await new Promise((resolve, reject) => control.once('error', reject).listen(controlPath, resolve));
+  if (!acquired) process.exit(0);
   const stop = () => { stopped = true; };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
   let pane;
   const clear = async () => {
     if (pane) await request(path, 'pane.graphics.clear', { pane_id: pane, layer_id: 'herdr-math' })
-      .catch(error => { if (error.code !== 'not_found') throw error; });
+      .catch(error => { if (!['not_found', 'pane_not_found'].includes(error.code)) throw error; });
   };
   try {
+    const { renderFrame } = await import('./math.mjs');
     let previous;
     let frame;
     while (!stopped) {
       try {
+        const { plugins } = await request(path, 'plugin.list', { plugin_id: 'herdr-math' });
+        if (!plugins.some(plugin => plugin.enabled)) break;
         const current = await request(path, 'pane.current', {});
         const focused = current.pane?.pane_id;
         if (focused !== pane) {
@@ -64,7 +70,7 @@ if (!running) {
           } else previous = undefined;
         }
       } catch (error) {
-        if (error.code !== 'not_found' && error.code !== 'cell_size_unavailable') throw error;
+        if (!['not_found', 'pane_not_found', 'cell_size_unavailable', 'feature_disabled'].includes(error.code)) throw error;
         previous = undefined;
         frame = undefined;
       }

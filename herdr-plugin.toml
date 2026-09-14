@@ -1,6 +1,6 @@
 id = "herdr-math"
 name = "herdr-math"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.8.2"
 description = "Typeset display equations in the active terminal pane"
 platforms = ["linux", "macos"]
@@ -8,8 +8,22 @@ platforms = ["linux", "macos"]
 [[build]]
 command = ["npm", "ci"]
 
+[[build]]
+command = ["node", "src/setup.mjs"]
+
+[[startup]]
+command = ["node", "src/main.mjs"]
+
+[[events]]
+on = "pane.focused"
+command = ["node", "src/main.mjs"]
+
+[[events]]
+on = "pane.created"
+command = ["node", "src/main.mjs"]
+
 [[actions]]
-id = "toggle"
-title = "Toggle equation rendering (follows active pane)"
+id = "start"
+title = "Start equation rendering (follows active pane)"
 contexts = ["pane"]
 command = ["node", "src/main.mjs"]

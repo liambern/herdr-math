@@ -14,31 +14,15 @@ Requires Node.js 20+, npm, Herdr 0.8.2+, and a Kitty-graphics-compatible outer t
 herdr plugin install liambern/herdr-math
 ```
 
-The installation runs `npm ci`. Graphics must be enabled in Herdr: on the tested 0.8.2 build, set this in Herdr's configuration before starting the server:
+Installation runs `npm ci` and enables `kitty_graphics = true` in your Herdr configuration, using the setting location reported by your installed Herdr binary. Other settings and comments are preserved.
 
-```toml
-[experimental]
-kitty_graphics = true
-```
+Rendering starts automatically when Herdr starts and follows the active pane. When installing into an already-running session, switch panes once to start it. No per-pane activation is needed.
 
-Newer [Herdr documentation](https://herdr.dev/docs/socket-api/#pane-graphics) uses `[terminal] kitty_graphics`. Use the setting supported by your installed version. Restarting a server affects its running panes; arrange that separately from installing this plugin.
+If graphics were previously disabled, the existing session may require a compatible terminal reattach or a server restart before graphics become available. The installer does not restart your server or interrupt agents. Run Herdr inside a Kitty-graphics-compatible terminal, such as Kitty.
 
 ## Use
 
-Invoke **Toggle equation rendering (follows active pane)** once from Herdr's plugin actions, or run:
-
-```sh
-herdr plugin action invoke herdr-math.toggle
-```
-
-One renderer follows the active pane across tabs and workspaces, clearing its images from the previous pane when focus changes. Invoke the action again to stop rendering for the session. This optional binding makes the same action available without typing into an agent's prompt:
-
-```toml
-[[keys.command]]
-key = "prefix+alt+m"
-type = "plugin_action"
-command = "herdr-math.toggle"
-```
+Ask your agent for equations. To disable rendering, use `herdr plugin disable herdr-math`; re-enable it with `herdr plugin enable herdr-math` and switch panes. The renderer clears its images when disabled or uninstalled.
 
 Install the [harness-independent writing skill](skills/herdr-math/SKILL.md) through the [Skills CLI](https://github.com/vercel-labs/skills):
 
@@ -76,7 +60,7 @@ npm test
 herdr plugin link "$PWD"
 ```
 
-Six automated tests cover active-pane switching and cleanup, row/column placement, code fences, incomplete input, invalid TeX, macro isolation, and connection closure. The manifest and actual toggle action were exercised in an isolated Herdr 0.8.2 / Kitty 0.45.0 session under Xvfb, with visual checks of rendering, resizing, scrolling, and image cleanup. `test/live.mjs` provides the interactive terminal fixture for those checks.
+Seven automated tests cover installation configuration, active-pane switching and cleanup, row/column placement, code fences, incomplete input, invalid TeX, macro isolation, and connection closure. Automatic startup and restart were checked in an isolated Herdr session, including startup before any panes exist. The original rendering action was exercised in an isolated Herdr 0.8.2 / Kitty 0.45.0 session under Xvfb, with visual checks of rendering, resizing, scrolling, and image cleanup. `test/live.mjs` provides the interactive terminal fixture for those checks.
 
 The rendering scale follows [pi-math's architecture](https://github.com/Fadouse/pi-math/blob/main/docs/ARCHITECTURE.md): one MathJax ex is approximately half a terminal cell's height. This implementation is independent of Pi's TUI.
 

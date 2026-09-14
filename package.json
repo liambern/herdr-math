@@ -1,6 +1,6 @@
 {
   "name": "herdr-math",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Render LaTeX display equations inside Herdr terminal panes",
   "license": "MIT",
@@ -11,6 +11,7 @@
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",
     "mathjax-full": "3.2.2",
+    "smol-toml": "1.8.0",
     "string-width": "7.2.0"
   }
 }
