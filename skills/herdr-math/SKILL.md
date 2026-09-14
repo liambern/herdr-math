@@ -1,9 +1,11 @@
 ---
 name: herdr-math
-description: Write scientific equations for the Herdr Math terminal renderer when the user requests rendered math in a Herdr pane. Works with any agent harness.
+description: Use when writing or explaining mathematical equations in a Herdr terminal pane, including ordinary requests such as show the Schrodinger equation. Format display equations as LaTeX for the Herdr Math renderer. Works with any agent harness.
 ---
 
 # Math in Herdr
+
+When answering a mathematical question in Herdr, write display equations using the LaTeX convention below. The user does not need to explicitly ask for rendered math. Avoid substituting Unicode or plain-text approximations for display equations unless the user requests that format.
 
 Prefer standalone LaTeX environments, outside Markdown code fences. They survive harnesses such as Antigravity that already turn dollar-delimited math into Unicode text. Put the boundaries on separate lines:
 
