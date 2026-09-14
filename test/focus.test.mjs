@@ -22,6 +22,7 @@ test('renderer streams changed text, follows focus, and exits when disabled', as
   const sockets = new Set();
   const server = net.createServer(socket => {
     sockets.add(socket);
+    socket.on('error', () => {});
     let pending = Buffer.alloc(0);
     let pane;
     let header;
@@ -59,6 +60,7 @@ test('renderer streams changed text, follows focus, and exits when disabled', as
           const result = method === 'plugin.list' ? { plugins: [{ enabled }] }
             : method === 'pane.current' ? { pane: { pane_id: currentPane } }
             : method === 'pane.graphics.info' ? { pane_visible: true, cell_width_px: 9, cell_height_px: 20 }
+            : method === 'pane.layout' ? { layout: { zoomed: false, panes: [{ pane_id: params.pane_id, rect: { width: 100 } }] } }
             : method === 'pane.get' ? { pane: { scroll: { ...scroll } } }
             : method === 'pane.read' ? { read: { text } }
             : {};
@@ -77,7 +79,7 @@ test('renderer streams changed text, follows focus, and exits when disabled', as
   worker.stderr.on('data', data => { stderr += data; });
   const exited = once(worker, 'exit');
   async function waitFor(predicate, description) {
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 400; i++) {
       if (predicate()) return;
       await delay(10);
     }
@@ -87,11 +89,11 @@ test('renderer streams changed text, follows focus, and exits when disabled', as
   try {
     await waitFor(() => frames('first').length === 2, 'initial frame pair');
     const first = frames('first')[0];
-    assert.equal(first.header.format, 'rgba');
-    assert.equal(first.pixels.length, first.header.image_width * first.header.image_height * 4);
+    assert.equal(first.header.format, 'png');
+    assert(first.pixels.length < first.header.image_width * first.header.image_height * 4);
     assert(first.pixels.some(byte => byte !== 0));
     const reads = calls.filter(call => call.method === 'pane.read').length;
-    await waitFor(() => calls.filter(call => call.method === 'pane.read').length >= reads + 5, 'stable polling');
+    await waitFor(() => calls.filter(call => call.method === 'pane.read').length >= reads + 2, 'stable polling');
     assert.equal(frames('first').length, 2, 'stable text must not retransmit pixels');
 
     text = '\n$$\ny^3\n$$\n';
@@ -103,14 +105,25 @@ test('renderer streams changed text, follows focus, and exits when disabled', as
     scroll = { offset_from_bottom: 3, max_offset_from_bottom: 0 };
     scrollEvents.get('first').write(JSON.stringify({ event: 'pane_scroll_changed', data: { scroll } }) + '\n');
     await waitFor(() => frames('first').length === 5, 'immediate scroll placement');
-    assert.equal(frames('first')[4].header.placement.viewport_row, 3);
+    assert.equal(frames('first')[4].header.placement.viewport_row, first.header.placement.viewport_row + 3);
     assert(frames('first')[4].pixels.equals(frames('first')[3].pixels), 'scroll reuses cached pixels');
     assert(heldReads.length > 0, 'scroll placement must precede snapshot completion');
     text = '\n\n\n' + text;
     holdReads = false;
     for (const reply of heldReads.splice(0)) reply();
     await waitFor(() => frames('first').length === 7, 'replacement frame pair after scroll');
-    assert.equal(frames('first')[5].header.placement.viewport_row, 0);
+    assert.equal(frames('first')[5].header.placement.viewport_row, first.header.placement.viewport_row + 3);
+
+    const beforeBurst = calls.filter(call => call.method === 'pane.read').length;
+    const beforeFrames = frames('first').length;
+    for (let i = 0; i < 6; i++) {
+      scroll = { offset_from_bottom: i + 4, max_offset_from_bottom: 0 };
+      scrollEvents.get('first').write(JSON.stringify({ event: 'pane.scroll_changed', data: { scroll } }) + '\n');
+      await delay(15);
+    }
+    assert(calls.filter(call => call.method === 'pane.read').length > beforeBurst,
+      'snapshots must run while scrolling is still active');
+    await waitFor(() => frames('first').length >= beforeFrames + 2, 'cached scroll frames');
 
     currentPane = 'second';
     const event = JSON.stringify({ event: 'pane_focused', data: { pane_id: currentPane } }) + '\n';

@@ -2,7 +2,7 @@
   "name": "herdr-math",
   "version": "0.5.1",
   "private": true,
-  "description": "Render LaTeX display equations inside Herdr terminal panes",
+  "description": "Render inline and display LaTeX equations inside Herdr terminal panes",
   "license": "MIT",
   "engines": { "node": ">=20" },
   "repository": "github:liambern/herdr-math",
