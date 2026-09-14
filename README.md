@@ -48,7 +48,7 @@ The renderer also recognizes `align`, `gather`, and `multline` environments, wit
 - Inline, incomplete, invalid, partially visible, and unreadably cramped equations remain text. Keep source lines short enough to avoid wrapping inside TeX commands.
 - The source remains available for copying. Only delimiters still present in the terminal can be detected; the plugin cannot recover Markdown already transformed by a harness.
 - Equations use a dark background and light text. The screenshot shows the matching Catppuccin-style colors.
-- The worker caches its PNG and refreshes the placement every 200 ms while visible. MathJax runs only for uncached formulas. Brief raw-text transitions can occur during output and scrolling.
+- The worker checks for changes every 50 ms and caches the last eight rendered screens. Fresh placements get a prompt second presentation; unchanged placements refresh every 200 ms. MathJax runs only for uncached formulas, and outlined equations skip unnecessary system-font loading. Brief raw-text transitions can occur during output and scrolling.
 
 ## If equations still appear as plain text
 

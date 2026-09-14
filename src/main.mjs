@@ -36,11 +36,15 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
     const { renderFrame } = await import('./math.mjs');
     let previous;
     let frame;
+    const frames = new Map();
+    let nextPresentation = 0;
     while (!stopped) {
       try {
-        const { plugins } = await request(path, 'plugin.list', { plugin_id: 'herdr-math' });
+        const [{ plugins }, current] = await Promise.all([
+          request(path, 'plugin.list', { plugin_id: 'herdr-math' }),
+          request(path, 'pane.current', {}),
+        ]);
         if (!plugins.some(plugin => plugin.enabled)) break;
-        const current = await request(path, 'pane.current', {});
         const focused = current.pane?.pane_id;
         if (focused !== pane) {
           await clear();
@@ -57,8 +61,14 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
           if (geometry.pane_visible && geometry.cell_width_px && geometry.cell_height_px) {
             const text = result.read.text;
             const signature = JSON.stringify([text, geometry.cell_width_px, geometry.cell_height_px, layout.layout]);
-            if (signature !== previous) {
-              frame = renderFrame(text, geometry.cell_width_px, geometry.cell_height_px);
+            const changed = signature !== previous;
+            if (changed) {
+              frame = frames.get(signature);
+              if (!frame) {
+                frame = renderFrame(text, geometry.cell_width_px, geometry.cell_height_px);
+                frames.set(signature, frame);
+                if (frames.size > 8) frames.delete(frames.keys().next().value);
+              }
               const latest = await request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 });
               if (latest.read.text === text && !stopped) {
                 previous = signature;
@@ -66,7 +76,11 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
             }
             // Re-present cached pixels: terminal redraws can erase a placement
             // without changing the visible text or geometry.
-            if (frame && !stopped) await sendFrame(path, pane, frame);
+            if (frame && !stopped && (changed || Date.now() >= nextPresentation)) {
+              await sendFrame(path, pane, frame);
+              // A fresh placement needs a prompt second presentation after the redraw.
+              nextPresentation = Date.now() + (changed ? 50 : 200);
+            }
           } else previous = undefined;
         }
       } catch (error) {
@@ -74,7 +88,7 @@ if (!running && process.env.HERDR_PLUGIN_EVENT) {
         previous = undefined;
         frame = undefined;
       }
-      await delay(200);
+      await delay(50);
     }
   } finally {
     control.close();

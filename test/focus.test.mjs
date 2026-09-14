@@ -16,7 +16,7 @@ test('renderer follows focus, clears the old pane, and survives a closed pane', 
   const server = net.createServer(socket => {
     socket.once('data', data => {
       const { id, method, params } = JSON.parse(data);
-      calls.push({ method, pane: params.pane_id });
+      calls.push({ method, pane: params.pane_id, at: performance.now() });
       if (closed && params.pane_id === 'second') {
         socket.end(JSON.stringify({ id, error: { code: 'not_found', message: 'Pane closed' } }) + '\n');
         return;
@@ -46,8 +46,10 @@ test('renderer follows focus, clears the old pane, and survives a closed pane', 
   }
   try {
     await waitFor('pane.graphics.set', 'first');
+    const switched = performance.now();
     focused = 'second';
     await waitFor('pane.graphics.set', 'second');
+    console.log(`Focus-to-placement: ${Math.round(calls.find(c => c.method === 'pane.graphics.set' && c.pane === 'second').at - switched)} ms`);
     assert(calls.findIndex(c => c.method === 'pane.graphics.clear' && c.pane === 'first') < calls.findIndex(c => c.method === 'pane.graphics.set' && c.pane === 'second'));
     closed = true;
     focused = 'third';
