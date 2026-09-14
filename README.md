@@ -60,7 +60,7 @@ The renderer also recognizes `align`, `gather`, and `multline` environments, wit
 - Inline, incomplete, invalid, partially visible, and unreadably cramped equations remain text. Keep source lines short enough to avoid wrapping inside TeX commands.
 - The source remains available for copying. Only delimiters still present in the terminal can be detected; the plugin cannot recover Markdown already transformed by a harness.
 - Equations use a dark background and light text. The screenshot shows the matching Catppuccin-style colors.
-- Focus events start rendering the new pane immediately. Images travel over a persistent raw-pixel graphics stream; unchanged screens are not repeatedly uploaded. The last eight screens are cached, and outlined equations skip system-font loading.
+- Focus events start rendering the new pane immediately. A current-pane check every 200 ms also recovers from tab/workspace navigation that does not emit focus events, and from startup before a pane is available. Unchanged focus does not reopen the stream or upload pixels. Images travel over a persistent raw-pixel graphics stream; unchanged screens are not repeatedly uploaded. The last eight screens are cached, and outlined equations skip system-font loading.
 - Host scrollback events shift the cached image by the reported row offset before the next text snapshot is rendered. Agent interfaces that scroll by redrawing their own screen may not emit host scrollback events; those changes are detected from visible text. Brief transitions remain possible.
 
 ## If equations still appear as plain text
@@ -77,7 +77,7 @@ npm test
 herdr plugin link "$PWD"
 ```
 
-Seven automated tests cover scroll-offset repositioning before a blocked text read completes, stream framing and cleanup, installation configuration, active-pane switching, row/column placement, code fences, incomplete input, invalid TeX, macro isolation, and connection closure. On Herdr 0.9.0 with Kitty under Xvfb, eight screen-capture trials measured 27–36 ms from newly visible pane text to its rendered equation, and eight wheel-scroll trials measured 37–90 ms from input to the image at its new position. These are local measurements, not guarantees for other terminals or agent TUIs.
+Automated tests cover scroll-offset repositioning before a blocked text read completes, stream framing and cleanup, installation configuration, active-pane switching, missed focus events, startup without a pane, stale focus responses, row/column placement, code fences, incomplete input, invalid TeX, macro isolation, and connection closure. On Herdr 0.9.0 with Kitty under Xvfb, eight screen-capture trials measured 27–36 ms from newly visible pane text to its rendered equation, and eight wheel-scroll trials measured 37–90 ms from input to the image at its new position. These are local measurements, not guarantees for other terminals or agent TUIs.
 
 Automatic startup and restart were checked in an isolated Herdr session, including startup before any panes exist. The original rendering action was exercised in an isolated Herdr 0.8.2 / Kitty 0.45.0 session under Xvfb, with visual checks of rendering, resizing, scrolling, and image cleanup. `test/live.mjs` provides the interactive terminal fixture for those checks.
 
