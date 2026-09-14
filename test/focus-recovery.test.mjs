@@ -1,3 +1,5 @@
+import { request } from '../src/herdr.mjs';
+import { controlPath } from '../src/control.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -15,6 +17,7 @@ async function renderer(t, pane) {
   let events;
   const server = net.createServer(socket => {
     sockets.add(socket);
+    socket.on('error', () => {});
     let pending = Buffer.alloc(0);
     let streamPane;
     let header;
@@ -50,6 +53,7 @@ async function renderer(t, pane) {
             : method === 'plugin.list' ? { plugins: [{ enabled: true }] }
             : method === 'pane.graphics.info' ? { pane_visible: true, cell_width_px: 9, cell_height_px: 20 }
             : method === 'pane.read' ? { read: { text: '\n$$\nx^2\n$$\n' } }
+            : method === 'pane.layout' ? { layout: { zoomed: false, panes: [{ pane_id: params.pane_id, rect: { width: 100 } }] } }
             : method === 'pane.get' ? { pane: { scroll: { offset_from_bottom: 0, max_offset_from_bottom: 0 } } }
             : {};
           const response = method === 'pane.current' && !state.pane
@@ -80,13 +84,15 @@ async function renderer(t, pane) {
     await rm(directory, { recursive: true });
   });
   state.waitFor = async (predicate, description) => {
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 500; i++) {
       if (predicate()) return;
       assert.equal(worker.exitCode, null, stderr);
       await delay(10);
     }
     assert.fail(`Missing ${description}: ${stderr}`);
   };
+  state.toggle = () => request(controlPath(path), 'toggle', {});
+  state.stop = () => { worker.kill(); return exited; };
   state.frames = pane => state.calls.filter(call => call === `frame:${pane}`).length;
   state.focusEvent = pane => {
     state.pane = pane;
@@ -130,4 +136,30 @@ test('a delayed current-pane response cannot undo a newer focus event', async t 
   await state.waitFor(() => state.replies.length === 1, 'next focus check after stale response');
   assert.equal(state.calls.filter(call => call === 'opened:first').length, 1, 'stale response must not restore old pane');
   assert.equal(state.frames('second'), 2);
+});
+
+
+test('shutdown cancels a stalled current-pane request', async t => {
+  const state = await renderer(t, 'first');
+  await state.waitFor(() => state.frames('first') === 2, 'initial frames');
+  state.holdCurrent = true;
+  await state.waitFor(() => state.replies.length === 1, 'stalled focus request');
+  const started = performance.now();
+  const [code] = await state.stop();
+  assert.equal(code, 0);
+  assert(performance.now() - started < 1500, 'shutdown must cancel the request, not wait for its deadline');
+});
+
+
+test('toggle hides overlays across focus changes and restores the current pane', async t => {
+  const state = await renderer(t, 'first');
+  await state.waitFor(() => state.frames('first') === 2, 'initial frames');
+  assert.deepEqual(await state.toggle(), { visible: false });
+  await state.waitFor(() => state.calls.includes('closed:first'), 'hidden overlay stream');
+  state.focusEvent('second');
+  const reads = state.currentReads;
+  await state.waitFor(() => state.currentReads > reads, 'focus reconciliation while hidden');
+  assert.equal(state.frames('second'), 0);
+  assert.deepEqual(await state.toggle(), { visible: true });
+  await state.waitFor(() => state.frames('second') === 2, 'restored overlays in current pane');
 });
