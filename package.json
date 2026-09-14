@@ -1,6 +1,6 @@
 {
   "name": "herdr-math",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "description": "Render inline and display LaTeX equations inside Herdr terminal panes",
   "license": "MIT",

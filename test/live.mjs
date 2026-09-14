@@ -29,7 +29,7 @@ const sample = String.raw`
   \langle A\rangle &= \frac{\langle\psi|A|\psi\rangle}{\langle\psi|\psi\rangle}
   \end{align*}
 
-  Inline $x^2$ stays text. The command prompt stays untouched.
+  Inline $x^2$ renders within this sentence. The command prompt stays untouched.
 
   > Ready
 `;

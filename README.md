@@ -53,13 +53,3 @@ Switch panes once after updating. See the [latest release](https://github.com/li
 ## License
 
 [MIT](LICENSE).
-
-## Rendering and reliability
-
-Scroll events reposition the cached image, coalescing bursts and allowing only one scroll write at a time. Scroll events request the latest viewport immediately, with at most one new snapshot every 16 ms and only one snapshot in flight. Continuous scrolling does not postpone rendering; snapshots made stale by a newer scroll event are discarded. This is a timer-based rate limit, not synchronization with the display refresh rate. A one-second fallback checks for text updates; focus and layout events still trigger work promptly. A separate one-second check recovers silent focus changes and detects plugin disablement. Herdr 0.8.2 does not expose a general visible-text-change subscription, so these fallback checks remain necessary.
-
-In-memory LRU caches retain formula SVGs (4 MiB), rasterized equation images (16 MiB), and complete viewport frames (32 MiB). Moving an equation reuses its image when its dimensions match. Cropped PNG payloads are also cached, so scrolling reuses compressed bytes instead of retransmitting a full raw viewport. Cached pane content is never written to disk. Frames are limited to 8 megapixels and 16,384 pixels per dimension; oversized viewports remain text.
-
-Socket operations have five-second deadlines and are cancelled on focus changes or shutdown. Startup recovers an owned socket left behind by a crashed renderer. The regression suite uses mock Herdr sockets; run it with `npm ci` and `npm test`. Live terminal appearance still needs verification in a compatible Herdr session.
-
-The equation background is intentionally opaque to conceal the original LaTeX. Terminal-emulator background opacity does not apply to those image pixels. Transparent overlays would expose the source underneath; seamless transparency requires Herdr support for hiding source cells independently of the image.

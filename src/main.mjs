@@ -182,7 +182,7 @@ if (control && process.env.HERDR_PLUGIN_EVENT) {
       });
       // An event received during the request is newer than this snapshot.
       if (!stopped && readingFocus === focusRevision) focus(current.pane?.pane_id);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
     if (failure) throw failure;
   } catch (error) {

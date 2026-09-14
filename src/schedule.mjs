@@ -1,6 +1,6 @@
 // Events request the next available render slot; repeated events cannot postpone it.
 export class RenderSchedule {
-  constructor(signal, fallbackMs = 1000, frameMs = 16) {
+  constructor(signal, fallbackMs = 100, frameMs = 16) {
     this.signal = signal;
     this.fallbackMs = fallbackMs;
     this.frameMs = frameMs;
