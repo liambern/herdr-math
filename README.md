@@ -40,7 +40,15 @@ type = "plugin_action"
 command = "herdr-math.toggle"
 ```
 
-For agents, use the [harness-independent skill](skills/herdr-math/SKILL.md), or ask them to write standalone display environments, outside Markdown code fences:
+Install the [harness-independent writing skill](skills/herdr-math/SKILL.md) through the [Skills CLI](https://github.com/vercel-labs/skills):
+
+```sh
+npx skills add liambern/herdr-math --skill herdr-math -g
+```
+
+`-g` makes the skill available across projects for the agents you select. This installs writing instructions; the Herdr plugin above provides the rendering. To inspect the available skill without installing it, use `npx skills add liambern/herdr-math --list`.
+
+Alternatively, ask agents to write standalone display environments, outside Markdown code fences:
 
 ```latex
 \begin{equation*}
