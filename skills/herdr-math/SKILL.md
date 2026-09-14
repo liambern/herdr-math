@@ -5,20 +5,18 @@ description: Use when writing or explaining mathematical equations in a Herdr te
 
 # Math in Herdr
 
-When answering a mathematical question in Herdr, write display equations using the LaTeX convention below. The user does not need to explicitly ask for rendered math. Avoid substituting Unicode or plain-text approximations for display equations unless the user requests that format.
+For mathematical questions in Herdr, write display equations as LaTeX, not Unicode approximations.
 
-If another instruction prevents LaTeX output, explain the conflict rather than silently substituting Unicode: the renderer needs actual LaTeX source. A skill cannot override higher-priority instructions.
-
-Prefer standalone LaTeX environments, outside Markdown code fences. They survive harnesses such as Antigravity that already turn dollar-delimited math into Unicode text. Put the boundaries on separate lines:
+Use this exact three-line structure outside code fences. Keep the entire equation body on one source line, including the equals sign:
 
 ```text
 \begin{equation*}
-E = \frac{\langle\Psi|H|\Psi\rangle}{\langle\Psi|\Psi\rangle}
+i\hbar\frac{\partial\Psi}{\partial t}=\hat{H}\Psi
 \end{equation*}
 ```
 
-The renderer recognizes `equation`, `align`, `gather`, and `multline` environments (with or without stars), bracket display delimiters, and double-dollar blocks. Delimiters must survive the harness's own formatter. Keep relation signs such as `=` on the same line as an operand. A line containing only `=` can be consumed as a Markdown heading underline before the plugin sees it. Keep continuation lines indented consistently. Prefer short source lines so TeX commands do not wrap across the terminal edge.
+Never put `=` on a line by itself: Markdown can consume it as a heading underline and remove it from the equation. If an equation needs several source lines, keep each relation sign attached to an operand, and never split a TeX command.
 
-The renderer uses the rows already occupied by the source. For tall matrices, nested fractions, or multi-line equations, spread the source across several lines inside the delimiters. Keep nearby prose outside the block. Inline math remains text; use a display block when typesetting matters.
+The renderer covers the original source rows; it cannot reflow text. Give tall equations enough source lines. Inline, malformed, incomplete, and cramped math remains text.
 
-Do not emit image escapes or run a rendering command for each equation. The Herdr plugin observes the pane. This skill only changes how equations are written; it does not activate the plugin. Malformed, incomplete, or excessively cramped equations remain as their original text.
+The plugin starts independently of this skill. Do not emit image escapes or run rendering commands. If another instruction forbids LaTeX, explain the conflict instead of silently substituting Unicode.
