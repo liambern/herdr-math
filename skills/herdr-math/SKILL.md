@@ -17,7 +17,7 @@ E = \frac{\langle\Psi|H|\Psi\rangle}{\langle\Psi|\Psi\rangle}
 \end{equation*}
 ```
 
-The renderer recognizes `equation`, `align`, `gather`, and `multline` environments (with or without stars), bracket display delimiters, and double-dollar blocks. Delimiters must survive the harness's own formatter. Keep continuation lines indented consistently. Prefer short source lines so TeX commands do not wrap across the terminal edge.
+The renderer recognizes `equation`, `align`, `gather`, and `multline` environments (with or without stars), bracket display delimiters, and double-dollar blocks. Delimiters must survive the harness's own formatter. Keep relation signs such as `=` on the same line as an operand. A line containing only `=` can be consumed as a Markdown heading underline before the plugin sees it. Keep continuation lines indented consistently. Prefer short source lines so TeX commands do not wrap across the terminal edge.
 
 The renderer uses the rows already occupied by the source. For tall matrices, nested fractions, or multi-line equations, spread the source across several lines inside the delimiters. Keep nearby prose outside the block. Inline math remains text; use a display block when typesetting matters.
 
