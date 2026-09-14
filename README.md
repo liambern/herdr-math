@@ -2,35 +2,47 @@
 
 Render LaTeX display equations directly inside [Herdr](https://herdr.dev) terminal panes using MathJax and Resvg.
 
-The plugin reads visible terminal text. It works independently of agent APIs, session files, and authentication. An optional [writing skill](skills/herdr-math/SKILL.md) explains how any agent can write equations for it.
+The plugin reads visible terminal text. It works independently of agent APIs, session files, and authentication. The [writing skill](skills/herdr-math/SKILL.md) teaches your agent to emit the LaTeX that the plugin renders.
 
-![Equations rendered in a real Herdr pane](artifacts/herdr-rendered.png)
+![Codex answering a question about Maxwell’s equations, rendered by herdr-math inside Herdr](artifacts/herdr-rendered.png)
 
 ## Install
 
-Requires Node.js 20+, npm, Herdr 0.8.2+, and a Kitty-graphics-compatible outer terminal. Tested on Linux with Kitty 0.45.0; macOS is declared but has not been visually tested.
+Requires Node.js 20+, npm, Herdr 0.8.2+, and a Kitty-graphics-compatible terminal. Tested on Linux with Kitty; macOS has not been visually tested.
+
+1. **Open Herdr in Kitty** (or another terminal that supports Kitty graphics).
+
+2. **Install the plugin and writing skill:**
+
+   ```sh
+   herdr plugin install liambern/herdr-math
+   npx skills add liambern/herdr-math --skill herdr-math -g
+   ```
+
+   In the skill installer, select the agents you use, such as Codex or Claude Code. `-g` installs the skill across projects for those agents.
+
+3. **Switch panes once, then ask your agent:** “What are Maxwell's equations?” Start a fresh agent conversation if it was already running when you installed the skill.
+
+The plugin enables Herdr's `kitty_graphics` setting during installation, starts automatically with Herdr, and follows the active pane. No per-pane toggle or rendering command is needed. If graphics were previously disabled in an existing session, reattaching a compatible terminal or restarting that server may still be necessary; installation does not interrupt running agents.
+
+## Update
 
 ```sh
+herdr plugin disable herdr-math
 herdr plugin install liambern/herdr-math
+npx skills update herdr-math
+herdr plugin enable herdr-math
 ```
 
-Installation runs `npm ci` and enables `kitty_graphics = true` in your Herdr configuration, using the setting location reported by your installed Herdr binary. Other settings and comments are preserved.
+Switch panes once after updating.
 
-Rendering starts automatically when Herdr starts and follows the active pane. When installing into an already-running session, switch panes once to start it. No per-pane activation is needed.
-
-If graphics were previously disabled, the existing session may require a compatible terminal reattach or a server restart before graphics become available. The installer does not restart your server or interrupt agents. Run Herdr inside a Kitty-graphics-compatible terminal, such as Kitty.
+The [latest release](https://github.com/liambern/herdr-math/releases/latest) lists the current version and changes.
 
 ## Use
 
-Ask your agent for equations. To disable rendering, use `herdr plugin disable herdr-math`; re-enable it with `herdr plugin enable herdr-math` and switch panes. The renderer clears its images when disabled or uninstalled.
+Ask mathematical questions normally. The skill supplies display LaTeX; the plugin renders it. The same plugin works across agent harnesses, including Codex, Claude Code, and Antigravity.
 
-Install the [harness-independent writing skill](skills/herdr-math/SKILL.md) through the [Skills CLI](https://github.com/vercel-labs/skills):
-
-```sh
-npx skills add liambern/herdr-math --skill herdr-math -g
-```
-
-`-g` makes the skill available across projects for the agents you select. This installs writing instructions; the Herdr plugin above provides the rendering. To inspect the available skill without installing it, use `npx skills add liambern/herdr-math --list`.
+To stop rendering, run `herdr plugin disable herdr-math`. To resume, run `herdr plugin enable herdr-math` and switch panes.
 
 Alternatively, ask agents to write standalone display environments, outside Markdown code fences:
 
