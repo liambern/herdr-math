@@ -25,13 +25,13 @@ Newer [Herdr documentation](https://herdr.dev/docs/socket-api/#pane-graphics) us
 
 ## Use
 
-Invoke **Toggle equation rendering in this pane** from Herdr's plugin actions, or run this in the pane you want to render:
+Invoke **Toggle equation rendering (follows active pane)** once from Herdr's plugin actions, or run:
 
 ```sh
 herdr plugin action invoke herdr-math.toggle
 ```
 
-Invoke it again to stop and remove the images. Each pane has its own renderer. This optional binding makes the same action available without typing into an agent's prompt:
+One renderer follows the active pane across tabs and workspaces, clearing its images from the previous pane when focus changes. Invoke the action again to stop rendering for the session. This optional binding makes the same action available without typing into an agent's prompt:
 
 ```toml
 [[keys.command]]
@@ -76,7 +76,7 @@ npm test
 herdr plugin link "$PWD"
 ```
 
-Five automated tests cover row/column placement, code fences, incomplete input, invalid TeX, macro isolation, and connection closure. The manifest and actual toggle action were exercised in an isolated Herdr 0.8.2 / Kitty 0.45.0 session under Xvfb, with visual checks of rendering, resizing, scrolling, and image cleanup. `test/live.mjs` provides the interactive terminal fixture for those checks.
+Six automated tests cover active-pane switching and cleanup, row/column placement, code fences, incomplete input, invalid TeX, macro isolation, and connection closure. The manifest and actual toggle action were exercised in an isolated Herdr 0.8.2 / Kitty 0.45.0 session under Xvfb, with visual checks of rendering, resizing, scrolling, and image cleanup. `test/live.mjs` provides the interactive terminal fixture for those checks.
 
 The rendering scale follows [pi-math's architecture](https://github.com/Fadouse/pi-math/blob/main/docs/ARCHITECTURE.md): one MathJax ex is approximately half a terminal cell's height. This implementation is independent of Pi's TUI.
 
