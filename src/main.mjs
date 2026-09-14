@@ -64,7 +64,7 @@ if (!running) {
           } else previous = undefined;
         }
       } catch (error) {
-        if (error.code !== 'not_found') throw error;
+        if (error.code !== 'not_found' && error.code !== 'cell_size_unavailable') throw error;
         previous = undefined;
         frame = undefined;
       }
