@@ -30,31 +30,3 @@ export function encodePNG(pixels, width, height) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk('IHDR', header), chunk('IDAT', deflateSync(scanlines, { level: 1 })), chunk('IEND', Buffer.alloc(0))]);
 }
-
-const encoded = new WeakMap();
-export function wireFrame(frame) {
-  if (encoded.has(frame)) return encoded.get(frame);
-  const blocks = frame.placements;
-  // Unknown frames retain their original placement; renderer frames can be cropped.
-  let col = 0, row = 0, cols = frame.cols, rows = frame.rows;
-  if (blocks?.length) {
-    col = Math.min(...blocks.map(block => block.col));
-    row = Math.min(...blocks.map(block => block.row));
-    cols = Math.max(...blocks.map(block => block.col + block.cols)) - col;
-    rows = Math.max(...blocks.map(block => block.row + block.rows)) - row;
-  } else if (blocks) {
-    const result = { data: encodePNG(Buffer.alloc(4), 1, 1), width: 1, height: 1, cols: 1, rows: 1, col: 0, row: 0 };
-    encoded.set(frame, result);
-    return result;
-  }
-  const cellWidth = frame.width / frame.cols, cellHeight = frame.height / frame.rows;
-  const width = cols * cellWidth, height = rows * cellHeight;
-  const pixels = Buffer.alloc(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const start = ((row * cellHeight + y) * frame.width + col * cellWidth) * 4;
-    pixels.set(frame.pixels.subarray(start, start + width * 4), y * width * 4);
-  }
-  const result = { data: encodePNG(pixels, width, height), width, height, cols, rows, col, row };
-  encoded.set(frame, result);
-  return result;
-}

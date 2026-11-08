@@ -36,6 +36,13 @@ test('inline rendering never paints neighboring prose or other rows', () => {
   }
 });
 
+test('moderately tall inline math such as fractions, sums and superscripts renders within the row', () => {
+  const sentence = String.raw`a target $F(X) = \frac{1}{N!}\sum_{\sigma} \prod_i K(y_i, x_{\sigma(i)})$ costs $O(N^2)$ here.`;
+  for (const [width, height] of [[9, 20], [10, 22]]) {
+    assert.equal(renderFrame(sentence, width, height, 160).placements.length, 2, `${width}x${height} cells`);
+  }
+});
+
 test('oversized and invalid inline math fall back to source text', () => {
   for (const latex of [String.raw`\frac{\frac{a}{b}}{\frac{c}{d}}`, String.raw`\unknownMacro{x}`]) {
     assert.equal(renderFrame(`Value $${latex}$ here.`, 10, 22, 120).placements.length, 0);

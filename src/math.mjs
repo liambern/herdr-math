@@ -107,7 +107,8 @@ export function renderFrame(text, cellWidth, cellHeight, paneCols) {
     const baseScale = cellHeight * 0.5;
     const padding = block.rows === 1 ? 2 : 8;
     const scale = Math.min(baseScale, (availableWidth - padding) / math.width, (h - padding) / math.height);
-    if (scale < baseScale * 0.75) continue;
+    // Inline math must fit one terminal row, so allow it smaller than display math, which can use more rows.
+    if (scale < baseScale * (inline ? 0.6 : 0.75)) continue;
     const mw = math.width * scale, mh = math.height * scale;
     const mathX = inline ? block.col * cellWidth + 1 : paneCols === undefined
       ? block.col * cellWidth + (availableWidth - mw) / 2
@@ -130,7 +131,7 @@ export function renderFrame(text, cellWidth, cellHeight, paneCols) {
     for (let row = 0; row < h; row++) {
       pixels.set(tile.subarray(row * w * 4, (row + 1) * w * 4), ((y + row) * width + x) * 4);
     }
-    placements.push({ ...block, col, cols: endCol - col });
+    placements.push({ ...block, col, cols: endCol - col, tile: { key: tileKey, pixels: tile, width: w, height: h } });
   }
   return { pixels, width, height, cols, rows, placements };
 }

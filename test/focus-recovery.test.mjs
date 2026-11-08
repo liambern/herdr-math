@@ -76,9 +76,9 @@ async function renderer(t, pane) {
   };
   state.toggle = () => request(controlPath(path), 'toggle', {});
   state.stop = () => { worker.kill(); return exited; };
-  state.frames = pane => panes.frames(pane);
-  state.cleared = pane => panes.clears(pane) > 0;
-  state.clearedBeforeFrame = (old, pane) => panes.index('clear', old) >= 0 && panes.index('clear', old) < panes.index('frame', pane);
+  state.frames = pane => panes.uploads(pane);
+  state.cleared = pane => panes.deletes(pane) > 0;
+  state.clearedBeforeFrame = (old, pane) => panes.index('delete', old) >= 0 && panes.index('delete', old) < panes.index('upload', pane);
   state.focusEvent = pane => {
     state.pane = pane;
     events.write(JSON.stringify({ event: 'pane_focused', data: { pane_id: pane } }) + '\n');
