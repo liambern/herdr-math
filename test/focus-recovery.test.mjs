@@ -8,63 +8,45 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fakePanes } from './panes.mjs';
 
 async function renderer(t, pane) {
   const directory = await mkdtemp(`${tmpdir()}/herdr-math-recovery-`);
   const path = `${directory}/socket`;
-  const state = { pane, holdCurrent: false, currentReads: 0, replies: [], calls: [] };
+  const panes = fakePanes();
+  const state = { pane, holdCurrent: false, currentReads: 0, replies: [], opened: [] };
   const sockets = new Set();
   let events;
   const server = net.createServer(socket => {
     sockets.add(socket);
     socket.on('error', () => {});
-    let pending = Buffer.alloc(0);
-    let streamPane;
-    let header;
-    socket.on('close', () => {
-      sockets.delete(socket);
-      if (streamPane) state.calls.push(`closed:${streamPane}`);
-    });
-    socket.on('data', data => {
-      pending = Buffer.concat([pending, data]);
-      while (pending.length) {
-        if (header) {
-          if (pending.length < header.data_length) return;
-          pending = pending.subarray(header.data_length);
-          state.calls.push(`frame:${streamPane}`);
-          header = undefined;
-          continue;
-        }
-        const end = pending.indexOf(10);
-        if (end < 0) return;
-        const message = JSON.parse(pending.subarray(0, end).toString());
-        pending = pending.subarray(end + 1);
-        if (streamPane) { header = message; continue; }
-        const { id, method, params } = message;
-        if (method === 'events.subscribe') {
-          if (params.subscriptions.some(item => item.type === 'pane.focused')) events = socket;
-          socket.write(JSON.stringify({ id, result: {} }) + '\n');
-        } else if (method === 'pane.graphics.stream') {
-          streamPane = params.pane_id;
-          state.calls.push(`opened:${streamPane}`);
-          socket.write(JSON.stringify({ id, result: {} }) + '\n');
-        } else {
-          const result = method === 'pane.current' ? { pane: { pane_id: state.pane } }
-            : method === 'plugin.list' ? { plugins: [{ enabled: true }] }
-            : method === 'pane.graphics.info' ? { pane_visible: true, cell_width_px: 9, cell_height_px: 20 }
-            : method === 'pane.read' ? { read: { text: '\n$$\nx^2\n$$\n' } }
-            : method === 'pane.layout' ? { layout: { zoomed: false, panes: [{ pane_id: params.pane_id, rect: { width: 100 } }] } }
-            : method === 'pane.get' ? { pane: { scroll: { offset_from_bottom: 0, max_offset_from_bottom: 0 } } }
-            : {};
-          const response = method === 'pane.current' && !state.pane
-            ? { id, error: { code: 'pane_not_found', message: 'No focused pane.' } }
-            : { id, result };
-          const reply = () => socket.end(JSON.stringify(response) + '\n');
-          if (method === 'pane.current') state.currentReads++;
-          if (method === 'pane.current' && state.holdCurrent) state.replies.push(reply);
-          else reply();
-        }
+    socket.on('close', () => sockets.delete(socket));
+    let pending = '';
+    socket.on('data', async data => {
+      pending += data;
+      const end = pending.indexOf('\n');
+      if (end < 0) return;
+      const { id, method, params } = JSON.parse(pending.slice(0, end));
+      pending = pending.slice(end + 1);
+      if (method === 'events.subscribe') {
+        if (params.subscriptions.some(item => item.type === 'pane.focused')) events = socket;
+        socket.write(JSON.stringify({ id, result: {} }) + '\n');
+        return;
       }
+      if (method === 'pane.process_info') state.opened.push(params.pane_id);
+      const result = method === 'pane.current' ? { pane: { pane_id: state.pane } }
+        : method === 'plugin.list' ? { plugins: [{ enabled: true }] }
+        : method === 'pane.process_info' ? { process_info: { shell_pid: await panes.pid(params.pane_id) } }
+        : method === 'pane.read' ? { read: { text: '\n$$\nx^2\n$$\n' } }
+        : method === 'pane.get' ? { pane: { scroll: { offset_from_bottom: 0, max_offset_from_bottom: 0 } } }
+        : {};
+      const response = method === 'pane.current' && !state.pane
+        ? { id, error: { code: 'pane_not_found', message: 'No focused pane.' } }
+        : { id, result };
+      const reply = () => socket.end(JSON.stringify(response) + '\n');
+      if (method === 'pane.current') state.currentReads++;
+      if (method === 'pane.current' && state.holdCurrent) state.replies.push(reply);
+      else reply();
     });
   });
   await new Promise(resolve => server.listen(path, resolve));
@@ -79,6 +61,7 @@ async function renderer(t, pane) {
     state.holdCurrent = false;
     for (const reply of state.replies.splice(0)) reply();
     await exited;
+    panes.close();
     for (const socket of sockets) socket.destroy();
     await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true });
@@ -93,7 +76,9 @@ async function renderer(t, pane) {
   };
   state.toggle = () => request(controlPath(path), 'toggle', {});
   state.stop = () => { worker.kill(); return exited; };
-  state.frames = pane => state.calls.filter(call => call === `frame:${pane}`).length;
+  state.frames = pane => panes.frames(pane);
+  state.cleared = pane => panes.clears(pane) > 0;
+  state.clearedBeforeFrame = (old, pane) => panes.index('clear', old) >= 0 && panes.index('clear', old) < panes.index('frame', pane);
   state.focusEvent = pane => {
     state.pane = pane;
     events.write(JSON.stringify({ event: 'pane_focused', data: { pane_id: pane } }) + '\n');
@@ -103,45 +88,45 @@ async function renderer(t, pane) {
 
 test('renderer recovers when navigation changes the current pane without a focus event', async t => {
   const state = await renderer(t, 'first');
-  await state.waitFor(() => state.frames('first') === 2, 'initial frame pair');
+  await state.waitFor(() => state.frames('first') === 1, 'initial frame');
   state.pane = 'second';
-  await state.waitFor(() => state.frames('second') === 2, 'frames after silent tab switch');
-  assert(state.calls.indexOf('closed:first') < state.calls.indexOf('frame:second'));
+  await state.waitFor(() => state.frames('second') === 1, 'frame after silent tab switch');
+  assert(state.clearedBeforeFrame('first', 'second'), 'old image removed before the new pane renders');
   const reads = state.currentReads;
   await state.waitFor(() => state.currentReads >= reads + 2, 'unchanged focus checks');
-  assert.equal(state.frames('second'), 2, 'unchanged focus must not retransmit pixels');
-  assert.equal(state.calls.filter(call => call === 'opened:second').length, 1);
+  assert.equal(state.frames('second'), 1, 'unchanged focus must not retransmit pixels');
+  assert.equal(state.opened.filter(pane => pane === 'second').length, 1, 'terminal opened once');
 
   state.pane = undefined;
-  await state.waitFor(() => state.calls.includes('closed:second'), 'stream closure with no focused pane');
+  await state.waitFor(() => state.cleared('second'), 'image removal with no focused pane');
   state.pane = 'third';
-  await state.waitFor(() => state.frames('third') === 2, 'frames after a pane becomes available');
+  await state.waitFor(() => state.frames('third') === 1, 'frames after a pane becomes available');
 });
 
 test('renderer recovers when started before a current pane is available', async t => {
   const state = await renderer(t);
   await state.waitFor(() => state.currentReads >= 1, 'initial empty focus read');
   state.pane = 'first';
-  await state.waitFor(() => state.frames('first') === 2, 'first pane without a focus event');
+  await state.waitFor(() => state.frames('first') === 1, 'first pane without a focus event');
 });
 
 test('a delayed current-pane response cannot undo a newer focus event', async t => {
   const state = await renderer(t, 'first');
-  await state.waitFor(() => state.frames('first') === 2, 'initial frame pair');
+  await state.waitFor(() => state.frames('first') === 1, 'initial frame');
   state.holdCurrent = true;
   await state.waitFor(() => state.replies.length === 1, 'held focus snapshot');
   state.focusEvent('second');
-  await state.waitFor(() => state.frames('second') === 2, 'event-driven frames before snapshot completion');
+  await state.waitFor(() => state.frames('second') === 1, 'event-driven frames before snapshot completion');
   state.replies.shift()();
   await state.waitFor(() => state.replies.length === 1, 'next focus check after stale response');
-  assert.equal(state.calls.filter(call => call === 'opened:first').length, 1, 'stale response must not restore old pane');
-  assert.equal(state.frames('second'), 2);
+  assert.equal(state.opened.filter(pane => pane === 'first').length, 1, 'stale response must not restore old pane');
+  assert.equal(state.frames('second'), 1);
 });
 
 
 test('shutdown cancels a stalled current-pane request', async t => {
   const state = await renderer(t, 'first');
-  await state.waitFor(() => state.frames('first') === 2, 'initial frames');
+  await state.waitFor(() => state.frames('first') === 1, 'initial frames');
   state.holdCurrent = true;
   await state.waitFor(() => state.replies.length === 1, 'stalled focus request');
   const started = performance.now();
@@ -153,13 +138,13 @@ test('shutdown cancels a stalled current-pane request', async t => {
 
 test('toggle hides overlays across focus changes and restores the current pane', async t => {
   const state = await renderer(t, 'first');
-  await state.waitFor(() => state.frames('first') === 2, 'initial frames');
+  await state.waitFor(() => state.frames('first') === 1, 'initial frames');
   assert.deepEqual(await state.toggle(), { visible: false });
-  await state.waitFor(() => state.calls.includes('closed:first'), 'hidden overlay stream');
+  await state.waitFor(() => state.cleared('first'), 'hidden overlay removed');
   state.focusEvent('second');
   const reads = state.currentReads;
   await state.waitFor(() => state.currentReads > reads, 'focus reconciliation while hidden');
   assert.equal(state.frames('second'), 0);
   assert.deepEqual(await state.toggle(), { visible: true });
-  await state.waitFor(() => state.frames('second') === 2, 'restored overlays in current pane');
+  await state.waitFor(() => state.frames('second') === 1, 'restored overlays in current pane');
 });

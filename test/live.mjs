@@ -2,7 +2,7 @@
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { request } from '../src/herdr.mjs';
+import { request, openPaneGraphics } from '../src/herdr.mjs';
 import { renderFrame } from '../src/math.mjs';
 
 const sample = String.raw`
@@ -41,10 +41,10 @@ await delay(1500);
 const worker = spawn(process.execPath, ['src/main.mjs'], { stdio: ['ignore', 'ignore', 'pipe'] });
 worker.stderr.on('data', data => writeFileSync('artifacts/worker-error.log', data));
 await delay(1800);
-const geometry = await request(path, 'pane.graphics.info', { pane_id: pane });
+const geometry = (await openPaneGraphics(path, pane)).size();
 const result = await request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 });
 writeFileSync('artifacts/live-snapshot.json', JSON.stringify({ geometry, read: result.read }, null, 2));
-const frame = renderFrame(result.read.text, geometry.cell_width_px, geometry.cell_height_px);
+const frame = renderFrame(result.read.text, geometry.cellWidth, geometry.cellHeight);
 writeFileSync('artifacts/equation-layer.rgba', frame.pixels);
 writeFileSync('artifacts/placements.json', JSON.stringify(frame.placements, null, 2));
 writeFileSync('artifacts/live-ready', 'ready');
