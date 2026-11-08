@@ -20,9 +20,10 @@ export function fakePanes() {
         buffer = buffer.slice(end + 1);
       }
       let last = 0;
-      for (const match of buffer.matchAll(/\x1b_Ga=([Td])[^;\x1b]*(?:;[A-Za-z0-9+/=]{0,16})?/g)) {
-        events.push({ type: match[1] === 'T' ? 'frame' : 'clear', pane: name });
-        if (match[1] === 'T') pane.heads.push(match[0]);
+      for (const match of buffer.matchAll(/\x1b_Ga=([tpd])[^;\x1b]*(?:;[A-Za-z0-9+/=]{0,16})?/g)) {
+        const type = { t: 'upload', p: 'place', d: 'delete' }[match[1]];
+        events.push({ type, pane: name });
+        if (type === 'upload') pane.heads.push(match[0]);
         last = match.index + match[0].length;
       }
       buffer = buffer.slice(Math.max(last, buffer.length - 64));
@@ -34,8 +35,9 @@ export function fakePanes() {
     events,
     pid: name => (panes.get(name) ?? open(name)).pid,
     heads: name => panes.get(name)?.heads ?? [],
-    frames: name => events.filter(event => event.type === 'frame' && event.pane === name).length,
-    clears: name => events.filter(event => event.type === 'clear' && event.pane === name).length,
+    uploads: name => events.filter(event => event.type === 'upload' && event.pane === name).length,
+    places: name => events.filter(event => event.type === 'place' && event.pane === name).length,
+    deletes: name => events.filter(event => event.type === 'delete' && event.pane === name).length,
     index: (type, name) => events.findIndex(event => event.type === type && event.pane === name),
     close: () => { for (const pane of panes.values()) pane.child.kill(); },
   };

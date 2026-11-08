@@ -130,7 +130,7 @@ export function renderFrame(text, cellWidth, cellHeight, paneCols) {
     for (let row = 0; row < h; row++) {
       pixels.set(tile.subarray(row * w * 4, (row + 1) * w * 4), ((y + row) * width + x) * 4);
     }
-    placements.push({ ...block, col, cols: endCol - col });
+    placements.push({ ...block, col, cols: endCol - col, tile: { key: tileKey, pixels: tile, width: w, height: h } });
   }
   return { pixels, width, height, cols, rows, placements };
 }

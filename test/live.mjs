@@ -46,7 +46,7 @@ const result = await request(path, 'pane.read', { pane_id: pane, source: 'visibl
 writeFileSync('artifacts/live-snapshot.json', JSON.stringify({ geometry, read: result.read }, null, 2));
 const frame = renderFrame(result.read.text, geometry.cellWidth, geometry.cellHeight);
 writeFileSync('artifacts/equation-layer.rgba', frame.pixels);
-writeFileSync('artifacts/placements.json', JSON.stringify(frame.placements, null, 2));
+writeFileSync('artifacts/placements.json', JSON.stringify(frame.placements.map(({ tile, ...placement }) => placement), null, 2));
 writeFileSync('artifacts/live-ready', 'ready');
 let command = '';
 while (true) {
