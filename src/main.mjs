@@ -2,7 +2,7 @@ import { Cache } from './cache.mjs';
 import { RenderSchedule } from './schedule.mjs';
 import { acquireLock } from './lock.mjs';
 import { controlPath, handleControl } from './control.mjs';
-import { request, subscribe, openGraphicsStream } from './herdr.mjs';
+import { request, subscribe, openPaneGraphics } from './herdr.mjs';
 
 const path = process.env.HERDR_SOCKET_PATH;
 if (!path) throw new Error('Run the Herdr Math action inside Herdr.');
@@ -23,7 +23,7 @@ if (control && process.env.HERDR_PLUGIN_EVENT) {
   let focusRevision = 0;
   let generation = 0;
   let revision = 0;
-  let activeStream;
+  let activeGraphics;
   let paneController;
   let subscription;
   let failure;
@@ -36,106 +36,67 @@ if (control && process.env.HERDR_PLUGIN_EVENT) {
       const paneOptions = { signal };
       const work = new RenderSchedule(signal);
       schedule = work;
-      let stream;
-      let previous;
+      let graphics;
       let scrollEvents;
-      let scrollOpening;
-      let scrollRevision = 0;
-      let lastFrame;
-      let anchor;
-      let scrollTimer;
-      let scrollingWrite = false;
-      let pendingScroll;
-      const flushScroll = async () => {
-        scrollTimer = undefined;
-        if (scrollingWrite || !pendingScroll || stopped || generation !== mine) return;
-        const next = pendingScroll;
-        pendingScroll = undefined;
-        scrollingWrite = true;
-        try { await next.stream.send(next.frame, next.row); }
-        catch (error) { if (generation === mine && !stopped) { failure = error; stop(); } }
-        finally {
-          scrollingWrite = false;
-          if (pendingScroll && !stopped && generation === mine) scrollTimer = setTimeout(flushScroll, 0);
-        }
-      };
+      let size;
+      let sizeRevision;
+      let previous;
       try {
-        const openScroll = () => subscribe(path, [{ type: 'pane.scroll_changed', pane_id: pane }], event => {
-          const scroll = event.data.scroll;
-          scrollRevision++;
-          work.notify();
-          if (stream && lastFrame && anchor !== undefined && generation === mine && !stopped) {
-            pendingScroll = { stream, frame: lastFrame,
-              row: scroll.offset_from_bottom - scroll.max_offset_from_bottom - anchor };
-            if (!scrollTimer && !scrollingWrite) scrollTimer = setTimeout(flushScroll, 0);
-          }
-        }, paneOptions);
         while (!stopped && generation === mine) {
           await work.wait();
           if (stopped || generation !== mine) break;
           try {
-            scrollOpening ??= openScroll();
+            // Images are part of the pane's content and scroll with its text, so scrolling only
+            // needs a fresh snapshot once the pane is back at the bottom.
+            scrollEvents ??= await subscribe(path, [{ type: 'pane.scroll_changed', pane_id: pane }], () => work.notify(), paneOptions);
+            if (!graphics) {
+              graphics = await openPaneGraphics(path, pane, paneOptions);
+              if (generation === mine) activeGraphics = graphics;
+            }
             const readingRevision = revision;
-            const readingScroll = scrollRevision;
-            const results = await Promise.allSettled([
-              request(path, 'pane.graphics.info', { pane_id: pane }, paneOptions),
-              request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 }, paneOptions),
-              stream || openGraphicsStream(path, pane, paneOptions),
+            const [info, result] = await Promise.all([
               request(path, 'pane.get', { pane_id: pane }, paneOptions),
-              scrollEvents || scrollOpening,
-              request(path, 'pane.layout', { pane_id: pane }, paneOptions),
+              request(path, 'pane.read', { pane_id: pane, source: 'visible', lines: 10000 }, paneOptions),
             ]);
-            if (results[2].status === 'fulfilled') stream = results[2].value;
-            if (results[4].status === 'fulfilled') scrollEvents = results[4].value;
-            if (scrollEvents?.destroyed || stream?.closed) throw new Error('Herdr pane connection closed.');
+            if (scrollEvents.destroyed) throw new Error('Herdr pane connection closed.');
             if (stopped || generation !== mine) break;
-            if (readingScroll !== scrollRevision || readingRevision !== revision) { work.notify(); continue; }
-            const error = results.find(result => result.status === 'rejected');
-            if (error) throw error.reason;
-            activeStream = stream;
-            const [geometry, result, , info, , layoutResult] = results.map(result => result.value);
-            if (geometry.pane_visible && geometry.cell_width_px && geometry.cell_height_px) {
-              const layout = layoutResult.layout;
-              const rect = layout.zoomed ? layout.area : layout.panes.find(item => item.pane_id === pane)?.rect;
-              const paneCols = rect?.width;
-              if (!Number.isSafeInteger(paneCols) || paneCols <= 0) throw new RangeError('Pane width unavailable.');
-              const text = result.read.text;
-              const key = JSON.stringify([text, geometry.cell_width_px, geometry.cell_height_px, paneCols]);
-              const signature = JSON.stringify([key, readingRevision, readingScroll]);
-              if (signature !== previous) {
-                let frame = frames.get(key);
-                if (!frame) {
-                  frame = renderFrame(text, geometry.cell_width_px, geometry.cell_height_px, paneCols);
-                  frames.set(key, frame, frame.pixels.length);
-                }
-                pendingScroll = undefined;
-                lastFrame = frame;
-                anchor = info.pane.scroll.offset_from_bottom - info.pane.scroll.max_offset_from_bottom;
-                await stream.send(frame, 0);
-                await new Promise(resolve => setTimeout(resolve, 20));
-                if (!stopped && generation === mine && readingScroll === scrollRevision) await stream.send(frame, 0);
-                previous = signature;
+            if (readingRevision !== revision) { work.notify(); continue; }
+            if (info.pane.scroll.offset_from_bottom !== 0) continue;
+            if (sizeRevision !== readingRevision) {
+              size = graphics.size();
+              sizeRevision = readingRevision;
+            }
+            const text = result.read.text;
+            const key = JSON.stringify([text, size.cellWidth, size.cellHeight, size.cols]);
+            if (key !== previous) {
+              let frame = frames.get(key);
+              if (!frame) {
+                frame = renderFrame(text, size.cellWidth, size.cellHeight, size.cols);
+                frames.set(key, frame, frame.pixels.length);
               }
-            } else previous = undefined;
+              graphics.send(frame);
+              previous = key;
+            }
           } catch (error) {
             if (stopped || generation !== mine) break;
-            if (!(error instanceof RangeError) && !['not_found', 'pane_not_found', 'cell_size_unavailable', 'feature_disabled', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE'].includes(error.code)) throw error;
-            pendingScroll = undefined;
-            lastFrame = undefined;
-            stream?.close();
-            stream = undefined;
+            // The text cannot be rendered at this size: show none until the text or layout changes.
+            if (error instanceof RangeError) {
+              if (previous !== undefined) graphics?.send({ placements: [] });
+              previous = undefined;
+              continue;
+            }
+            if (!['not_found', 'pane_not_found', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'EIO'].includes(error.code)) throw error;
+            graphics?.close();
+            graphics = undefined;
             scrollEvents?.destroy();
             scrollEvents = undefined;
-            scrollOpening = undefined;
+            sizeRevision = undefined;
             previous = undefined;
           }
         }
       } finally {
-        clearTimeout(scrollTimer);
-        pendingScroll = undefined;
         scrollEvents?.destroy();
-        (await scrollOpening?.catch(() => undefined))?.destroy();
-        stream?.close();
+        graphics?.close();
       }
     }
     function focus(pane) {
@@ -146,8 +107,9 @@ if (control && process.env.HERDR_PLUGIN_EVENT) {
       const mine = ++generation;
       paneController?.abort();
       paneController = new AbortController();
-      activeStream?.close();
-      activeStream = undefined;
+      // Remove the old pane's image before another pane renders.
+      activeGraphics?.close();
+      activeGraphics = undefined;
       if (!pane) return;
       const task = renderPane(pane, mine, AbortSignal.any([shutdown.signal, paneController.signal])).catch(error => {
         if (generation !== mine || stopped) return;
@@ -191,7 +153,7 @@ if (control && process.env.HERDR_PLUGIN_EVENT) {
   } finally {
     stop();
     subscription?.destroy();
-    activeStream?.close();
+    activeGraphics?.close();
     await Promise.all(tasks);
     control.close();
   }

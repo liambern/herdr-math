@@ -6,7 +6,7 @@ Render inline and display LaTeX equations inside [Herdr](https://herdr.dev) term
 
 ## Install
 
-Requires Node.js 20+, npm, Herdr 0.8.2+, and a Kitty-graphics-compatible terminal. Tested on Linux with Kitty.
+Requires Node.js 20+, npm, Python 3, Herdr 0.9.2+, and a Kitty-graphics-compatible terminal such as Kitty, Ghostty or WezTerm (GNOME Terminal cannot show images). Tested on Linux with Kitty and Herdr 0.9.5.
 
 Open Herdr in your compatible terminal, then install the plugin and [writing skill](skills/herdr-math/SKILL.md):
 
@@ -18,6 +18,8 @@ npx skills add liambern/herdr-math --skill herdr-math -g
 Select your agents in the skill installer. Switch panes once after installation, and start a fresh agent conversation to load the skill.
 
 The plugin enables Kitty graphics, starts with Herdr, and follows the active pane. If graphics were disabled in an existing session, reattach your terminal or restart the Herdr server.
+
+Herdr 0.9.2 removed its plugin graphics API, so the plugin writes standard Kitty graphics to the active pane's own terminal, which Herdr renders natively. Rendered math scrolls with the text; while you scroll back, the plugin leaves it in place and refreshes once the pane is back at the bottom.
 
 ## Use
 
@@ -42,10 +44,8 @@ To pause rendering, run `herdr plugin disable herdr-math`. To resume, run `herdr
 ## Update
 
 ```sh
-herdr plugin disable herdr-math
-herdr plugin install liambern/herdr-math
+herdr plugin update herdr-math
 npx skills update herdr-math
-herdr plugin enable herdr-math
 ```
 
 Switch panes once after updating. See the [latest release](https://github.com/liambern/herdr-math/releases/latest) for changes.

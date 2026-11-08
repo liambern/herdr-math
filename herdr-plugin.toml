@@ -1,7 +1,7 @@
 id = "herdr-math"
 name = "herdr-math"
-version = "0.6.0"
-min_herdr_version = "0.8.2"
+version = "0.7.0"
+min_herdr_version = "0.9.2"
 description = "Typeset inline and display equations in the active terminal pane"
 platforms = ["linux", "macos"]
 

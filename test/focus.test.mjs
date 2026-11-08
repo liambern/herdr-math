@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fakePanes } from './panes.mjs';
 
-test('renderer streams changed text, recovers missed focus events and closed panes, and exits when disabled', async () => {
+test('renderer writes changed text to the pane terminal, recovers missed focus events and closed panes, and exits when disabled', async () => {
   const directory = await mkdtemp(`${tmpdir()}/herdr-math-focus-`);
   const path = `${directory}/socket`;
+  const panes = fakePanes();
   let enabled = true;
   let currentPane = 'first';
   const missingPanes = new Set();
@@ -19,69 +21,44 @@ test('renderer streams changed text, recovers missed focus events and closed pan
   let events;
   const scrollEvents = new Map();
   let scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0 };
-  let holdReads = false;
-  const heldReads = [];
   const calls = [];
   const sockets = new Set();
   const server = net.createServer(socket => {
     sockets.add(socket);
     socket.on('error', () => {});
-    let pending = Buffer.alloc(0);
-    let pane;
-    let header;
-    socket.on('close', () => {
-      sockets.delete(socket);
-      if (pane) calls.push({ method: 'closed', pane });
-    });
-    socket.on('data', data => {
-      pending = Buffer.concat([pending, data]);
-      while (pending.length) {
-        if (header) {
-          if (pending.length < header.data_length) return;
-          const pixels = Buffer.from(pending.subarray(0, header.data_length));
-          pending = pending.subarray(header.data_length);
-          calls.push({ method: 'frame', pane, header, pixels });
-          header = undefined;
-          continue;
-        }
-        const end = pending.indexOf(10);
-        if (end < 0) return;
-        const message = JSON.parse(pending.subarray(0, end).toString());
-        pending = pending.subarray(end + 1);
-        if (pane) { header = message; continue; }
-        const { id, method, params } = message;
-        calls.push({ method, pane: params.pane_id });
-        if (method === 'pane.current' && !currentPane) {
-          emptyPaneReads++;
-          socket.end(JSON.stringify({ id, error: { code: 'pane_not_found', message: 'No current pane' } }) + '\n');
-          continue;
-        }
-        if (method.startsWith('pane.') && missingPanes.has(params.pane_id)) {
-          missingPaneErrors.add(params.pane_id);
-          socket.end(JSON.stringify({ id, error: { code: 'pane_not_found', message: 'Pane closed' } }) + '\n');
-          continue;
-        }
-        if (method === 'events.subscribe') {
-          const filter = params.subscriptions.find(item => item.type === 'pane.scroll_changed');
-          if (filter) scrollEvents.set(filter.pane_id, socket);
-          else events = socket;
-          socket.write(JSON.stringify({ id, result: {} }) + '\n');
-        } else if (method === 'pane.graphics.stream') {
-          pane = params.pane_id;
-          socket.write(JSON.stringify({ id, result: {} }) + '\n');
-        } else {
-          const result = method === 'plugin.list' ? { plugins: [{ enabled }] }
-            : method === 'pane.current' ? { pane: { pane_id: currentPane } }
-            : method === 'pane.graphics.info' ? { pane_visible: true, cell_width_px: 9, cell_height_px: 20 }
-            : method === 'pane.layout' ? { layout: { zoomed: false, panes: [{ pane_id: params.pane_id, rect: { width: 100 } }] } }
-            : method === 'pane.get' ? { pane: { scroll: { ...scroll } } }
-            : method === 'pane.read' ? { read: { text } }
-            : {};
-          const reply = () => socket.end(JSON.stringify({ id, result }) + '\n');
-          if (method === 'pane.read' && holdReads) heldReads.push(reply);
-          else reply();
-        }
+    socket.on('close', () => sockets.delete(socket));
+    let pending = '';
+    socket.on('data', async data => {
+      pending += data;
+      const end = pending.indexOf('\n');
+      if (end < 0) return;
+      const { id, method, params } = JSON.parse(pending.slice(0, end));
+      pending = pending.slice(end + 1);
+      calls.push({ method, pane: params.pane_id });
+      if (method === 'pane.current' && !currentPane) {
+        emptyPaneReads++;
+        socket.end(JSON.stringify({ id, error: { code: 'pane_not_found', message: 'No current pane' } }) + '\n');
+        return;
       }
+      if (method.startsWith('pane.') && missingPanes.has(params.pane_id)) {
+        missingPaneErrors.add(params.pane_id);
+        socket.end(JSON.stringify({ id, error: { code: 'pane_not_found', message: 'Pane closed' } }) + '\n');
+        return;
+      }
+      if (method === 'events.subscribe') {
+        const filter = params.subscriptions.find(item => item.type === 'pane.scroll_changed');
+        if (filter) scrollEvents.set(filter.pane_id, socket);
+        else events = socket;
+        socket.write(JSON.stringify({ id, result: {} }) + '\n');
+        return;
+      }
+      const result = method === 'plugin.list' ? { plugins: [{ enabled }] }
+        : method === 'pane.current' ? { pane: { pane_id: currentPane } }
+        : method === 'pane.process_info' ? { process_info: { shell_pid: await panes.pid(params.pane_id) } }
+        : method === 'pane.get' ? { pane: { scroll: { ...scroll } } }
+        : method === 'pane.read' ? { read: { text } }
+        : {};
+      socket.end(JSON.stringify({ id, result }) + '\n');
     });
   });
   await new Promise(resolve => server.listen(path, resolve));
@@ -92,88 +69,69 @@ test('renderer streams changed text, recovers missed focus events and closed pan
   worker.stderr.on('data', data => { stderr += data; });
   const exited = once(worker, 'exit');
   async function waitFor(predicate, description) {
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 500; i++) {
       if (predicate()) return;
       await delay(10);
     }
     assert.fail(`Missing ${description}: ${stderr}`);
   }
-  const frames = pane => calls.filter(call => call.method === 'frame' && call.pane === pane);
+  const reads = () => calls.filter(call => call.method === 'pane.read').length;
   try {
-    await waitFor(() => frames('first').length === 2, 'initial frame pair');
-    const first = frames('first')[0];
-    assert.equal(first.header.format, 'png');
-    assert(first.pixels.length < first.header.image_width * first.header.image_height * 4);
-    assert(first.pixels.some(byte => byte !== 0));
-    const reads = calls.filter(call => call.method === 'pane.read').length;
-    await waitFor(() => calls.filter(call => call.method === 'pane.read').length >= reads + 2, 'stable polling');
-    assert.equal(frames('first').length, 2, 'stable text must not retransmit pixels');
+    await waitFor(() => panes.frames('first') === 1, 'initial frame');
+    assert.match(panes.heads('first')[0], /f=100,.*C=1,q=2,m=\d;iVBORw0KGgo/);
+    let before = reads();
+    await waitFor(() => reads() >= before + 2, 'stable polling');
+    assert.equal(panes.frames('first'), 1, 'stable text must not retransmit pixels');
 
     text = '\n$$\ny^3\n$$\n';
-    await waitFor(() => frames('first').length === 4, 'changed-text frame pair');
-    assert(!frames('first')[2].pixels.equals(first.pixels));
+    await waitFor(() => panes.frames('first') === 2, 'changed-text frame');
 
-    holdReads = true;
-    await waitFor(() => heldReads.length > 0, 'blocked snapshot');
+    // While the user scrolls back, the existing image scrolls with the text; nothing is redrawn.
     scroll = { offset_from_bottom: 3, max_offset_from_bottom: 0 };
     scrollEvents.get('first').write(JSON.stringify({ event: 'pane_scroll_changed', data: { scroll } }) + '\n');
-    await waitFor(() => frames('first').length === 5, 'immediate scroll placement');
-    assert.equal(frames('first')[4].header.placement.viewport_row, first.header.placement.viewport_row + 3);
-    assert(frames('first')[4].pixels.equals(frames('first')[3].pixels), 'scroll reuses cached pixels');
-    assert(heldReads.length > 0, 'scroll placement must precede snapshot completion');
     text = '\n\n\n' + text;
-    holdReads = false;
-    for (const reply of heldReads.splice(0)) reply();
-    await waitFor(() => frames('first').length === 7, 'replacement frame pair after scroll');
-    assert.equal(frames('first')[5].header.placement.viewport_row, first.header.placement.viewport_row + 3);
-
-    const beforeBurst = calls.filter(call => call.method === 'pane.read').length;
-    const beforeFrames = frames('first').length;
-    for (let i = 0; i < 6; i++) {
-      scroll = { offset_from_bottom: i + 4, max_offset_from_bottom: 0 };
-      scrollEvents.get('first').write(JSON.stringify({ event: 'pane.scroll_changed', data: { scroll } }) + '\n');
-      await delay(15);
-    }
-    assert(calls.filter(call => call.method === 'pane.read').length > beforeBurst,
-      'snapshots must run while scrolling is still active');
-    await waitFor(() => frames('first').length >= beforeFrames + 2, 'cached scroll frames');
+    before = reads();
+    await waitFor(() => reads() >= before + 3, 'polling while scrolled back');
+    assert.equal(panes.frames('first'), 2, 'no frame while scrolled back');
+    scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0 };
+    scrollEvents.get('first').write(JSON.stringify({ event: 'pane_scroll_changed', data: { scroll } }) + '\n');
+    await waitFor(() => panes.frames('first') === 3, 'fresh frame back at the bottom');
 
     currentPane = 'second';
     const event = JSON.stringify({ event: 'pane_focused', data: { pane_id: currentPane } }) + '\n';
     events.write(event.slice(0, 12));
     events.write(event.slice(12));
-    await waitFor(() => frames('second').length === 2, 'focused-pane frame pair');
-    const closed = calls.findIndex(call => call.method === 'closed' && call.pane === 'first');
-    const rendered = calls.findIndex(call => call.method === 'frame' && call.pane === 'second');
-    assert(closed >= 0 && closed < rendered, 'old stream must close before the new pane renders');
+    await waitFor(() => panes.frames('second') === 1, 'focused-pane frame');
+    const cleared = panes.index('clear', 'first');
+    assert(cleared >= 0 && cleared < panes.index('frame', 'second'), 'old image must be removed before the new pane renders');
 
     // Losing a focus event must not leave the renderer polling a closed pane.
     missingPanes.add('second');
     await waitFor(() => missingPaneErrors.has('second'), 'pane_not_found response from the closed pane');
     currentPane = 'third';
-    await waitFor(() => frames('third').length === 2, 'recovery from closed pane without a focus event');
+    await waitFor(() => panes.frames('third') === 1, 'recovery from closed pane without a focus event');
 
     // A session can temporarily have no panes, then create one without a focus event.
     missingPanes.add('third');
     currentPane = undefined;
-    await waitFor(() => calls.some(call => call.method === 'closed' && call.pane === 'third'), 'closed pane cleanup');
+    await waitFor(() => panes.clears('third') >= 1, 'closed pane cleanup');
     await waitFor(() => emptyPaneReads >= 2, 'reconciliation while the session has no current pane');
     currentPane = 'fourth';
-    await waitFor(() => frames('fourth').length === 2, 'recovery after a period with no panes');
+    await waitFor(() => panes.frames('fourth') === 1, 'recovery after a period with no panes');
 
     // Missed focus events also matter when the previous pane still exists.
     currentPane = 'fifth';
-    await waitFor(() => frames('fifth').length === 2, 'focus reconciliation for an existing pane');
+    await waitFor(() => panes.frames('fifth') === 1, 'focus reconciliation for an existing pane');
+    assert(panes.clears('fourth') >= 1, 'previous pane image removed');
 
     enabled = false;
     await waitFor(() => worker.exitCode !== null, 'worker exit after disable');
     assert.equal(worker.exitCode, 0, stderr);
-    await waitFor(() => calls.some(call => call.method === 'closed' && call.pane === 'fifth'), 'final stream closure');
+    await waitFor(() => panes.clears('fifth') >= 1, 'final image removal');
   } finally {
-    holdReads = false;
-    for (const reply of heldReads.splice(0)) reply();
     if (worker.exitCode === null) worker.kill();
     await exited;
+    panes.close();
     for (const socket of sockets) socket.destroy();
     await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true });
