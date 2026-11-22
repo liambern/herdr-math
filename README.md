@@ -17,6 +17,8 @@ npx skills add liambern/herdr-math --skill herdr-math -g
 
 Select your agents in the skill installer. Switch panes once after installation, and start a fresh agent conversation to load the skill.
 
+**Codex CLI.** On versions with native Unicode math rendering (verified on 0.171.0), set `tui.rendering.math = false` in `~/.codex/config.toml`. For an existing `[tui]` table, add `rendering.math = false` inside it. Start or resume Codex to load the setting. For a single launch, use `codex -c tui.rendering.math=false`. This lets Herdr receive the original LaTeX. With Codex's default, a single reply can show a text-mode fraction beside a MathJax equation because Codex leaves unsupported expressions verbatim.
+
 The plugin enables Kitty graphics, starts with Herdr, and follows the active pane. If graphics were disabled in an existing session, reattach your terminal or restart the Herdr server.
 
 Herdr 0.9.2 removed its plugin graphics API, so the plugin writes standard Kitty graphics to the active pane's own terminal, which Herdr renders natively. Rendered math scrolls with the text; while you scroll back, the plugin leaves it in place and refreshes once the pane is back at the bottom.
